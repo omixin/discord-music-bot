@@ -152,6 +152,64 @@ client.once('ready', async () => {
 });
 
 client.on('interactionCreate', async interaction => {
+    // Автоматическое удаление конечных эфемерных сообщений (без выбора / кнопок) через 20 секунд
+    const origReply = interaction.reply.bind(interaction);
+    const origDeferReply = interaction.deferReply.bind(interaction);
+    const origUpdate = interaction.update.bind(interaction);
+    const origEditReply = interaction.editReply.bind(interaction);
+    const origFollowUp = interaction.followUp.bind(interaction);
+
+    let isEphemeralReply = false;
+    const checkEphemeral = (opts) => {
+        if (opts && opts.flags === MessageFlags.Ephemeral) return true;
+        if (interaction.message?.flags?.has(MessageFlags.Ephemeral)) return true;
+        return isEphemeralReply;
+    };
+
+    const scheduleAutoDelete = (opts) => {
+        const hasComponents = opts && opts.components && opts.components.length > 0;
+        if (checkEphemeral(opts) && !hasComponents) {
+            setTimeout(() => {
+                interaction.deleteReply().catch(() => {});
+            }, 20000);
+        }
+    };
+
+    interaction.deferReply = async (options = {}) => {
+        if (options.flags === MessageFlags.Ephemeral) isEphemeralReply = true;
+        return origDeferReply(options);
+    };
+
+    interaction.reply = async (options = {}) => {
+        const opts = typeof options === 'string' ? { content: options } : options;
+        if (opts.flags === MessageFlags.Ephemeral) isEphemeralReply = true;
+        const res = await origReply(options);
+        scheduleAutoDelete(opts);
+        return res;
+    };
+
+    interaction.update = async (options = {}) => {
+        const opts = typeof options === 'string' ? { content: options } : options;
+        const res = await origUpdate(options);
+        scheduleAutoDelete(opts);
+        return res;
+    };
+
+    interaction.editReply = async (options = {}) => {
+        const opts = typeof options === 'string' ? { content: options } : options;
+        const res = await origEditReply(options);
+        scheduleAutoDelete(opts);
+        return res;
+    };
+
+    interaction.followUp = async (options = {}) => {
+        const opts = typeof options === 'string' ? { content: options } : options;
+        if (opts.flags === MessageFlags.Ephemeral) isEphemeralReply = true;
+        const res = await origFollowUp(options);
+        scheduleAutoDelete(opts);
+        return res;
+    };
+
     // 1. Обработка всплывающих окон (Modals)
     if (interaction.isModalSubmit()) {
         if (interaction.customId === 'modal_add_track') {
